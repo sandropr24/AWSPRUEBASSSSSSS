@@ -52,7 +52,7 @@ app.post('/api/analizar' ,upload.single('imagen'), async(req, res) =>{
     const response = await rekognitionClient.send(command)
 
     //Enviar la respuesta al front como JSON
-    res,json({
+    res.json({
       success:true,
       labels: response.Labels
     })
