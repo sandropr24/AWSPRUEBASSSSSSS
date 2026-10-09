@@ -4,78 +4,149 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="estilos.css">
-  <title>Análisis de imágenes con AWS Rekognition</title>
+  <title>Análisis de Archivos con AWS</title>
 </head>
 <body>
-  <h1>Analizando archivos con AWS</h1>
+  <h1>Servicios de Análisis AWS</h1>
 
-  <form id="uploadForm">
-    <div>
-      <label for="imagen">Seleccione imagen</label>
-      <input type="file" name="imagen" id="imagen" accept="image/*" required>
-    </div>
-    <button type="submit">Enviar</button>
-  </form>
+  <main class="container">
+    <!-- REKOGNITION -->
+    <section>
+      <h2>1. Analizar Imagen (AWS Rekognition)</h2>
+      <form id="formImagen">
+        <div>
+          <label for="imagen">Seleccione una imagen:</label>
+          <input type="file" name="imagen" id="imagen" accept="image/*" required>
+        </div>
+        <button type="submit">Analizar Imagen</button>
+      </form>
+      <ul id="listaImagen"></ul>
+    </section>
 
-  <div>
-    <h3>Resultados del análisis</h3>
-    <ul id="listaEtiquetas"></ul>
-  </div>
-
+    <!-- TEXTRACT -->
+    <section>
+      <h2>2. Analizar Documento PDF (AWS Textract)</h2>
+      <form id="formDocumento">
+        <div>
+          <label for="documento">Seleccione un PDF (&lt; 5 MB):</label>
+          <input type="file" name="documento" id="documento" accept="application/pdf" required>
+        </div>
+        <button type="submit">Analizar PDF</button>
+      </form>
+      <ul id="listaDocumento"></ul>
+    </section>
+  </main>
   <script>
-    const form = document.getElementById('uploadForm')
-    const listaEtiquetas = document.getElementById('listaEtiquetas')
+    // Rekognition
+    const formImagen = document.getElementById('formImagen');
+    const listaImagen = document.getElementById('listaImagen');
 
-    // Agrega un <li> con texto plano a la lista
-    function agregarItem(texto) {
-      const li = document.createElement('li')
-      li.textContent = texto
-      listaEtiquetas.appendChild(li)
-    }
+    formImagen.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      listaImagen.innerHTML = '<li>Analizando imagen...</li>';
 
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault() // Detenemos el envío normal del formulario
-
-      // FormData = contenedor de datos del formulario
-      const formData = new FormData(form)
-
-      listaEtiquetas.innerHTML = ''
-      agregarItem('Analizando imagen con AWS...')
-
-      // Enviar los datos por el API
       try {
         const response = await fetch('/api/analizar', {
           method: 'POST',
-          body: formData
-        })
+          body: new FormData(formImagen)
+        });
 
-        // El servicio AWS devuelve la resolución
-        const data = await response.json()
+        const rawText = await response.text();
+        let data;
+        try {
+          data = JSON.parse(rawText);
+        } catch (jsonErr) {
+          throw new Error(`Respuesta inválida del servidor (Status ${response.status}): ${rawText}`);
+        }
 
-        listaEtiquetas.innerHTML = ''
+        if (!response.ok) {
+          listaImagen.innerHTML = `<li>Error: ${data.error || data.details || 'Fallo en la solicitud'}</li>`;
+          return;
+        }
 
-        if (data.success) {
-          if (data.labels.length === 0) {
-            agregarItem('No se detectaron etiquetas con la confianza mínima.')
-            return
-          }
+        listaImagen.innerHTML = '';
 
-          data.labels.forEach((label) => {
-            agregarItem(`Etiqueta: ${label.Name} - confianza: ${label.Confidence.toFixed(2)}%`)
-          })
+        if (data.success && data.labels) {
+          data.labels.forEach(label => {
+            const li = document.createElement('li');
+            li.textContent = `Etiqueta: ${label.Name} - Confianza: ${label.Confidence.toFixed(2)}%`;
+            listaImagen.appendChild(li);
+          });
         } else {
-          // Cuidado: en producción no se deben exponer todos los errores.
-          // El detalle técnico se registra en el servidor.
-          agregarItem(data.error)
-          if (data.details) agregarItem(data.details)
-          if (data.code) agregarItem(data.code)
+          listaImagen.innerHTML = '<li>No se detectaron etiquetas.</li>';
         }
       } catch (error) {
-        console.error(error)
-        listaEtiquetas.innerHTML = ''
-        agregarItem('Error de conexión')
+        console.error('Error en Rekognition:', error);
+        listaImagen.innerHTML = `<li>Error: ${error.message}</li>`;
       }
-    })
+    });
+
+    //Textract
+    const formDocumento = document.getElementById('formDocumento');
+    const inputDocumento = document.getElementById('documento');
+    const listaDocumento = document.getElementById('listaDocumento');
+
+    formDocumento.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      
+      const archivo = inputDocumento.files[0];
+      
+      if (!archivo) {
+        listaDocumento.innerHTML = '<li>Error: Seleccione un archivo PDF.</li>';
+        return;
+      }
+
+      // Validar tipo de archivo
+      if (archivo.type !== 'application/pdf' && !archivo.name.endsWith('.pdf')) {
+        listaDocumento.innerHTML = '<li>Error: El archivo debe tener formato PDF.</li>';
+        return;
+      }
+
+      // Validar tamaño máximo (5 MB)
+      if (archivo.size > 5 * 1024 * 1024) {
+        listaDocumento.innerHTML = '<li>Error: El archivo debe ser menor a 5 MB.</li>';
+        return;
+      }
+
+      listaDocumento.innerHTML = '<li>Analizando documento con AWS Textract...</li>';
+
+      try {
+        const response = await fetch('/api/analizar-documento', {
+          method: 'POST',
+          body: new FormData(formDocumento)
+        });
+
+        const rawText = await response.text();
+        let data;
+        try {
+          data = JSON.parse(rawText);
+        } catch (jsonErr) {
+          throw new Error(`Respuesta inválida del servidor (Status ${response.status}): ${rawText}`);
+        }
+
+        if (!response.ok) {
+          listaDocumento.innerHTML = `<li>Error: ${data.error || data.details || 'Fallo en el servidor'}</li>`;
+          return;
+        }
+
+        listaDocumento.innerHTML = '';
+
+        if (data.success && data.blocks) {
+          data.blocks.forEach(block => {
+            const li = document.createElement('li');
+            const texto = block.Text || '';
+            const confianza = block.Confidence ? block.Confidence.toFixed(1) : '0.0';
+            li.textContent = `respuesta : ${texto} - ${confianza}%`;
+            listaDocumento.appendChild(li);
+          });
+        } else {
+          listaDocumento.innerHTML = '<li>No se detectó texto en el documento.</li>';
+        }
+      } catch (error) {
+        console.error('Error en Textract:', error);
+        listaDocumento.innerHTML = `<li>Error: ${error.message}</li>`;
+      }
+    });
   </script>
 </body>
 </html>
